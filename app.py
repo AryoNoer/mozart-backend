@@ -1,79 +1,88 @@
-# app.py
-
-# Required imports
-import os
 from flask import Flask, request, jsonify
-from firebase_admin import credentials, firestore, initialize_app
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-# Initialize Flask app
 app = Flask(__name__)
 
-# Initialize Firestore DB
-cred = credentials.Certificate('key.json')
-default_app = initialize_app(cred)
+# Inisialisasi Firebase
+cred = credentials.Certificate("serviceAccount.json")
+firebase_admin.initialize_app(cred)
+
 db = firestore.client()
-todo_ref = db.collection('todos')
 
-@app.route('/add', methods=['POST'])
-def create():
-    """
-        create() : Add document to Firestore collection with request body.
-        Ensure you pass a custom ID as part of json body in post request,
-        e.g. json={'id': '1', 'title': 'Write a blog post'}
-    """
-    try:
-        id = request.json['id']
-        todo_ref.document(id).set(request.json)
-        return jsonify({"success": True}), 200
-    except Exception as e:
-        return f"An Error Occurred: {e}"
+# Route untuk mendapatkan semua data pengguna
 
-@app.route('/list', methods=['GET'])
-def read():
-    """
-        read() : Fetches documents from Firestore collection as JSON.
-        todo : Return document that matches query ID.
-        all_todos : Return all documents.
-    """
-    try:
-        # Check if ID was passed to URL query
-        todo_id = request.args.get('id')
-        if todo_id:
-            todo = todo_ref.document(todo_id).get()
-            return jsonify(todo.to_dict()), 200
-        else:
-            all_todos = [doc.to_dict() for doc in todo_ref.stream()]
-            return jsonify(all_todos), 200
-    except Exception as e:
-        return f"An Error Occurred: {e}"
 
-@app.route('/update', methods=['POST', 'PUT'])
-def update():
-    """
-        update() : Update document in Firestore collection with request body.
-        Ensure you pass a custom ID as part of json body in post request,
-        e.g. json={'id': '1', 'title': 'Write a blog post today'}
-    """
-    try:
-        id = request.json['id']
-        todo_ref.document(id).update(request.json)
-        return jsonify({"success": True}), 200
-    except Exception as e:
-        return f"An Error Occurred: {e}"
+@app.route('/api/users', methods=['GET'])
+def get_data():
+    data = []
+    # Ambil data dari Firestore
+    collection_ref = db.collection('user')
+    docs = collection_ref.stream()
+    for doc in docs:
+        data.append(doc.to_dict())
+    return jsonify(data)
 
-@app.route('/delete', methods=['GET', 'DELETE'])
-def delete():
-    """
-        delete() : Delete a document from Firestore collection.
-    """
-    try:
-        # Check for ID in URL query
-        todo_id = request.args.get('id')
-        todo_ref.document(todo_id).delete()
-        return jsonify({"success": True}), 200
-    except Exception as e:
-        return f"An Error Occurred: {e}"
 
-port = int(os.environ.get('PORT', 8080))
+# Route untuk menambahkan pengguna baru
+@app.route('/api/users', methods=['POST'])
+def add_data():
+    new_data = request.json.get("data")
+
+    if new_data is None:
+        return jsonify({"message": "Invalid data format"}), 400
+
+    # Tambahkan data ke Firestore
+    collection_ref = db.collection('user')
+    doc_ref, = collection_ref.add(new_data)
+
+    # Dapatkan data pengguna langsung setelah menambahkannya
+    user_data = doc_ref.get().to_dict()
+
+    return jsonify({"message": "Data added successfully", "user": user_data}), 201
+
+
+# Route untuk mendapatkan data pengguna berdasarkan ID
+
+
+@app.route('/api/users/<user_id>', methods=['GET'])
+def get_user(user_id):
+    user_ref = db.collection('user').document(user_id)
+    user_data = user_ref.get()
+    if user_data.exists:
+        return jsonify(user_data.to_dict())
+    else:
+        return jsonify({"message": "User not found"}), 404
+
+# Route untuk mengupdate data pengguna berdasarkan ID
+
+
+@app.route('/api/users/<user_id>', methods=['PUT'])
+def update_user(user_id):
+    user_ref = db.collection('user').document(user_id)
+    user_data = user_ref.get()
+
+    if user_data.exists:
+        updated_data = request.json
+        user_ref.update(updated_data)
+        return jsonify({"message": "User updated successfully"}), 200
+    else:
+        return jsonify({"message": "User not found"}), 404
+
+# Route untuk menghapus data pengguna berdasarkan ID
+
+
+@app.route('/api/users/<user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    user_ref = db.collection('user').document(user_id)
+    user_data = user_ref.get()
+
+    if user_data.exists:
+        user_ref.delete()
+        return jsonify({"message": "User deleted successfully"}), 200
+    else:
+        return jsonify({"message": "User not found"}), 404
+
+
 if __name__ == '__main__':
-    app.run(threaded=True, host='0.0.0.0', port=port)
+    app.run(debug=True)
